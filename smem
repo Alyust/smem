@@ -105,6 +105,15 @@ class ProcessData(Proc):
         except:
             return '?'
 
+    def pidppid(self, pid):
+        """Return PID of parent process"""
+        try:
+            s = self.read('%s/stat' % pid)
+            s = s.partition(')')[2].split(None, 2)[1]
+            return int(s)
+        except:
+            return 0
+
     def piduser(self, pid):
         """Return PID user data"""
         try:
@@ -323,6 +332,20 @@ def filters(opt, arg, *sources):
             return False
     return True
 
+def samenameparentid(pid):
+    """Return PID of topmost parent with same name"""
+    def pname(pid):
+        return proc.pidcmd(pid).partition(' ')[0]
+
+    pn = pname(pid)
+    while True:
+        ppid = proc.pidppid(pid)
+        ppn = pname(ppid)
+        if ppn != pn:
+            break
+        pid = ppid
+
+    return pid
 
 def processtotals(pids):
     totals = {}
@@ -332,8 +355,16 @@ def processtotals(pids):
             continue
         try:
             p = pidtotals(pid)
-            if p['maps'] != 0:
-                totals[pid] = p
+            if p['maps'] == 0:
+                continue
+            if options.merge_childs:
+                ppid = samenameparentid(pid)
+                if ppid != pid and ppid in totals:
+                    # add values from parent process
+                    for k,v in totals[ppid].items():
+                        p[k] += v
+                pid = ppid
+            totals[pid] = p
         except:
             continue
     return totals
@@ -670,6 +701,10 @@ def parse_arguments(argv=None):
             help="Process users regex")
 
     show_group = argparser.add_argument_group('Show')
+    show_group.add_argument('-g', '--merge-childs',
+            action='store_true',
+            help="Group(merge) in child processes with same name")
+
     show_group.add_argument('-m', '--mappings',
             action='store_true',
             help="Show mappings")
